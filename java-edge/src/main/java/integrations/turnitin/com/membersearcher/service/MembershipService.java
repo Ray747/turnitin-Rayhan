@@ -1,10 +1,12 @@
 package integrations.turnitin.com.membersearcher.service;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import integrations.turnitin.com.membersearcher.client.MembershipBackendClient;
 import integrations.turnitin.com.membersearcher.model.MembershipList;
 
+import integrations.turnitin.com.membersearcher.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -23,13 +25,17 @@ public class MembershipService {
 	 */
 	public CompletableFuture<MembershipList> fetchAllMembershipsWithUsers() {
 		return membershipBackendClient.fetchMemberships()
-				.thenCompose(members -> {
-					CompletableFuture<?>[] userCalls = members.getMemberships().stream()
-							.map(member -> membershipBackendClient.fetchUser(member.getUserId())
-									.thenApply(member::setUser))
-							.toArray(CompletableFuture<?>[]::new);
-					return CompletableFuture.allOf(userCalls)
-							.thenApply(nil -> members);
+				.thenCombine(membershipBackendClient.fetchUsers(), (memberships, users) -> {
+					var userMap = users.getUsers().stream()
+							.collect(Collectors.toMap(User::getId, user -> user));
+
+					memberships.getMemberships().forEach(member -> {
+						User user = userMap.get(member.getUserId());
+						member.setUser(user);
+					});
+
+					return memberships;
 				});
 	}
+
 }
